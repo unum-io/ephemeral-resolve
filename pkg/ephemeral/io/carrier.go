@@ -9,12 +9,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/carbynestack/ephemeral/pkg/amphora"
-	"go.uber.org/zap"
 	"io"
 	"io/ioutil"
 	"net"
 	"sync"
+
+	"github.com/carbynestack/ephemeral/pkg/amphora"
+	"go.uber.org/zap"
 )
 
 // Result contains the response from SPDZ runtime computation.

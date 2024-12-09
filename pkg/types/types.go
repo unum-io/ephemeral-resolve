@@ -6,11 +6,12 @@ package types
 
 import (
 	"context"
+	"math/big"
+	"time"
+
 	"github.com/carbynestack/ephemeral/pkg/amphora"
 	"github.com/carbynestack/ephemeral/pkg/castor"
 	pb "github.com/carbynestack/ephemeral/pkg/discovery/transport/proto"
-	"math/big"
-	"time"
 
 	mb "github.com/vardius/message-bus"
 	"google.golang.org/grpc"
@@ -61,11 +62,13 @@ type DiscoveryTypedConfig struct {
 
 // Activation is an object that is received as an input from the Ephemeral client.
 type Activation struct {
-	AmphoraParams []string     `json:"amphoraParams"`
-	SecretParams  []string     `json:"secretParams"`
-	GameID        string       `json:"gameID"`
-	Code          string       `json:"code"`
-	Output        OutputConfig `json:"output"`
+	AmphoraParams      []string     `json:"amphoraParams"`
+	SecretParams       []string     `json:"secretParams"`
+	CompilationCommand string       `json:"compilationCommand,omitempty"`
+	ExecutionCommand   string       `json:"executionCommand,omitempty"`
+	GameID             string       `json:"gameID"`
+	Code               string       `json:"code"`
+	Output             OutputConfig `json:"output"`
 }
 
 // ProxyConfig is the configuration used by the proxy when the connection between players is established.

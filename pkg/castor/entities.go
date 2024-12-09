@@ -34,12 +34,18 @@ var (
 	SPDZGfp = SPDZProtocol{"SPDZ gfp", "p"}
 	// SPDZGf2n provides the SPDZProtocol protocol definition following the GF(2^n) domain.
 	SPDZGf2n = SPDZProtocol{"SPDZ gf2n_", "2"}
+	// SPDZGfp provides the SPDZProtocol protocol definition following the Modulo a prime domain.
+	SPDZGfpD = SPDZProtocol{"gfp", "Dp"}
+	// SPDZGf2n provides the SPDZProtocol protocol definition following the GF(2^n) domain.
+	SPDZGf2nD = SPDZProtocol{"gf2n_", "D2"}
 )
 
 // SupportedSPDZProtocols is a list of all SPDZProtocol supported by castor and ephemeral.
 var SupportedSPDZProtocols = []SPDZProtocol{
 	SPDZGfp,
 	SPDZGf2n,
+	SPDZGfpD,
+	SPDZGf2nD,
 }
 
 // TupleType describes a type of Tuples provided by Castor.
@@ -50,6 +56,10 @@ type TupleType struct {
 }
 
 var (
+	// BitGfp describes the DaBits tuple type in the Mudulo a Prime domain.
+	DaBitGfp = TupleType{"DABIT_GFP", "daBits", SPDZGfp}
+	// BitGf2n describes the DaBits tuple type in the GF(2^n) domain.
+	DaBitGf2n = TupleType{"DABIT_GF2N", "daBits", SPDZGf2n}
 	// BitGfp describes the Bits tuple type in the Mudulo a Prime domain.
 	BitGfp = TupleType{"BIT_GFP", "Bits", SPDZGfp}
 	// BitGf2n describes the Bits tuple type in the GF(2^n) domain.
@@ -70,18 +80,66 @@ var (
 	MultiplicationTripleGfp = TupleType{"MULTIPLICATION_TRIPLE_GFP", "Triples", SPDZGfp}
 	// MultiplicationTripleGf2n describes the Triples tuple type in the GF(2^n) domain.
 	MultiplicationTripleGf2n = TupleType{"MULTIPLICATION_TRIPLE_GF2N", "Triples", SPDZGf2n}
+	// BitGfp describes the DaBits tuple type in the Mudulo a Prime domain.
+	DaBitGfpD = TupleType{"DABIT_GFP", "daBits", SPDZGfpD}
+	// BitGf2n describes the DaBits tuple type in the GF(2^n) domain.
+	DaBitGf2nD = TupleType{"DABIT_GF2N", "daBits", SPDZGf2nD}
+	// BitGfp describes the Bits tuple type in the Mudulo a Prime domain.
+	BitGfpD = TupleType{"BIT_GFP", "Bits", SPDZGfpD}
+	// BitGf2n describes the Bits tuple type in the GF(2^n) domain.
+	BitGf2nD = TupleType{"BIT_GF2N", "Bits", SPDZGf2nD}
+	// InputMaskGfp describes the Inputs tuple type in the Mudulo a Prime domain.
+	InputMaskGfpD = TupleType{"INPUT_MASK_GFP", "Inputs", SPDZGfpD}
+	// InputMaskGf2n describes the Inputs tuple type in the GF(2^n) domain.
+	InputMaskGf2nD = TupleType{"INPUT_MASK_GF2N", "Inputs", SPDZGf2nD}
+	// InverseTupleGfp describes the Inverses tuple type in the Mudulo a Prime domain.
+	InverseTupleGfpD = TupleType{"INVERSE_TUPLE_GFP", "Inverses", SPDZGfpD}
+	// InverseTupleGf2n describes the Inverses tuple type in the GF(2^n) domain.
+	InverseTupleGf2nD = TupleType{"INVERSE_TUPLE_GF2N", "Inverses", SPDZGf2nD}
+	// SquareTupleGfp describes the Squares tuple type in the Mudulo a Prime domain.
+	SquareTupleGfpD = TupleType{"SQUARE_TUPLE_GFP", "Squares", SPDZGfpD}
+	// SquareTupleGf2n describes the Squares tuple type in the GF(2^n) domain.
+	SquareTupleGf2nD = TupleType{"SQUARE_TUPLE_GF2N", "Squares", SPDZGf2nD}
+	// MultiplicationTripleGfp describes the Triples tuple type in the Mudulo a Prime domain.
+	MultiplicationTripleGfpD = TupleType{"MULTIPLICATION_TRIPLE_GFP", "Triples", SPDZGfpD}
+	// MultiplicationTripleGf2n describes the Triples tuple type in the GF(2^n) domain.
+	MultiplicationTripleGf2nD = TupleType{"MULTIPLICATION_TRIPLE_GF2N", "Triples", SPDZGf2nD}
 )
 
 // SupportedTupleTypes is a list of all tuple types supported by the castor client.
-var SupportedTupleTypes = []TupleType{
-	BitGfp,
-	BitGf2n,
-	InputMaskGfp,
-	InputMaskGf2n,
-	InverseTupleGfp,
-	InverseTupleGf2n,
-	SquareTupleGfp,
-	SquareTupleGf2n,
-	MultiplicationTripleGfp,
-	MultiplicationTripleGf2n,
+func SupportedTupleTypes(protocol SPDZProtocol) []TupleType {
+	switch protocol {
+	case SPDZGfp, SPDZGf2n:
+		return []TupleType{
+			DaBitGfp,
+			DaBitGf2n,
+			BitGfp,
+			BitGf2n,
+			InputMaskGfp,
+			InputMaskGf2n,
+			InverseTupleGfp,
+			InverseTupleGf2n,
+			SquareTupleGfp,
+			SquareTupleGf2n,
+			MultiplicationTripleGfp,
+			MultiplicationTripleGf2n,
+		}
+	case SPDZGfpD, SPDZGf2nD:
+		return []TupleType{
+			DaBitGfpD,
+			DaBitGf2nD,
+			BitGfpD,
+			BitGf2nD,
+			InputMaskGfpD,
+			InputMaskGf2nD,
+			InverseTupleGfpD,
+			InverseTupleGf2nD,
+			SquareTupleGfpD,
+			SquareTupleGf2nD,
+			MultiplicationTripleGfpD,
+			MultiplicationTripleGf2nD,
+		}
+	default:
+		return []TupleType{}
+	}
 }

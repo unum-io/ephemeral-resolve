@@ -26,6 +26,14 @@ public class Activation {
   String[] secretParams = new String[0];
 
   /**
+   */
+  String compilationCommand;
+
+  /**
+   */
+  String executionCommand;
+
+  /**
    * The UUID used to correlate function invocations among Carbyne Stack Virtual Cloud Providers.
    * Must be identical for all Ephemeral endpoints.
    */

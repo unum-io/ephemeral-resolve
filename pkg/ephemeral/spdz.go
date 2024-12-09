@@ -8,6 +8,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"math/big"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/carbynestack/ephemeral/pkg/castor"
 	d "github.com/carbynestack/ephemeral/pkg/discovery"
 	pb "github.com/carbynestack/ephemeral/pkg/discovery/transport/proto"
@@ -16,14 +26,6 @@ import (
 	. "github.com/carbynestack/ephemeral/pkg/types"
 	. "github.com/carbynestack/ephemeral/pkg/utils"
 	"github.com/google/uuid"
-	"io/ioutil"
-	"math/big"
-	"os"
-	"path/filepath"
-	"sort"
-	"strconv"
-	"sync"
-	"time"
 
 	"go.uber.org/zap"
 )
@@ -123,11 +125,11 @@ func (s *SPDZWrapper) getLocalPortForPlayer(id int32) string {
 // It accepts a logger, the type of tuples it provides, the spdz config, path to the player data base directory, the
 // game ID, as well as the thread it serves. It either returns a pointer to the new TupleStreamer or an error if
 // creation failed.
-type TupleStreamerFactory func(l *zap.SugaredLogger, tt castor.TupleType, conf *SPDZEngineTypedConfig, playerDataDir string, gameID uuid.UUID, threadNr int) (TupleStreamer, error)
+type TupleStreamerFactory func(l *zap.SugaredLogger, tt castor.TupleType, tf string, conf *SPDZEngineTypedConfig, playerDataDir string, gameID uuid.UUID, threadNr int) (TupleStreamer, error)
 
 // DefaultCastorTupleStreamerFactory default implementation of TupleStreamerFactory creating new io.CastorTupleStreamer
-func DefaultCastorTupleStreamerFactory(l *zap.SugaredLogger, tt castor.TupleType, conf *SPDZEngineTypedConfig, playerDataDir string, gameID uuid.UUID, threadNr int) (TupleStreamer, error) {
-	return NewCastorTupleStreamer(l, tt, conf, playerDataDir, gameID, threadNr)
+func DefaultCastorTupleStreamerFactory(l *zap.SugaredLogger, tt castor.TupleType, tf string, conf *SPDZEngineTypedConfig, playerDataDir string, gameID uuid.UUID, threadNr int) (TupleStreamer, error) {
+	return NewCastorTupleStreamer(l, tt, tf, conf, playerDataDir, gameID, threadNr)
 }
 
 // NewSPDZEngine returns a new instance of SPDZ engine that knows how to compile and trigger an execution of SPDZ runtime.
@@ -250,7 +252,7 @@ func (s *SPDZEngine) Compile(ctx *CtxConfig) error {
 	}
 	var stdoutSlice []byte
 	var stderrSlice []byte
-	command := fmt.Sprintf("./compile.py -M %s", appName)
+	command := fmt.Sprintf(act.CompilationCommand, appName)
 	stdoutSlice, stderrSlice, err = s.cmder.CallCMD(context.TODO(), []string{command}, s.baseDir)
 	stdOut := string(stdoutSlice)
 	stdErr := string(stderrSlice)
@@ -286,17 +288,17 @@ func (s *SPDZEngine) startMPC(ctx *CtxConfig) {
 			s.logger.Error("Tuple streamers have not terminated gracefully")
 		}
 	}()
-
+	tupleFamily, tupleProtocol := tupleFamilyParser(ctx.Act.ExecutionCommand)
 	var tupleStreamers = []TupleStreamer{}
 	gameUUID, err := uuid.Parse(ctx.Act.GameID)
 	if err != nil {
 		ctx.ErrCh <- fmt.Errorf("error parsing gameID: %v", err)
 		return
 	}
-	for _, tt := range castor.SupportedTupleTypes {
+	for _, tt := range castor.SupportedTupleTypes(tupleProtocol) {
 		for thread := 0; thread < nThreads; thread++ {
-			s.logger.Debugw("Creating new tuple streamer", TupleType, tt, "TupleStock", s.config.TupleStock, "Player-Data", s.playerDataPaths[tt.SpdzProtocol], GameID, gameUUID, "ThreadNr", thread)
-			streamer, err := s.streamerFactory(s.logger, tt, s.config, s.playerDataPaths[tt.SpdzProtocol], gameUUID, thread)
+			s.logger.Debugw("Creating new tuple streamer", TupleType, tt, "TupleStock", s.config.TupleStock, "Player-Data", s.playerDataPaths[tupleProtocol], GameID, gameUUID, "ThreadNr", thread)
+			streamer, err := s.streamerFactory(s.logger, tt, tupleFamily, s.config, s.playerDataPaths[tupleProtocol], gameUUID, thread)
 			if err != nil {
 				s.logger.Errorw("Error when initializing tuple streamer", GameID, ctx.Act.GameID, TupleType, tt, "Error", err)
 				ctx.ErrCh <- err
@@ -308,12 +310,12 @@ func (s *SPDZEngine) startMPC(ctx *CtxConfig) {
 	computationFinished := make(chan struct{})
 	terminateStreams := make(chan struct{})
 	defer close(terminateStreams)
-	streamErrCh := make(chan error, len(castor.SupportedTupleTypes))
+	streamErrCh := make(chan error, len(castor.SupportedTupleTypes(tupleProtocol)))
 	for _, s := range tupleStreamers {
 		wg.Add(1)
 		s.StartStreamTuples(terminateStreams, streamErrCh, wg)
 	}
-	command := []string{fmt.Sprintf("./Player-Online.x %s %s -N %s --ip-file-name %s --file-prep-per-thread", fmt.Sprint(s.config.PlayerID), appName, fmt.Sprint(ctx.Spdz.PlayerCount), ipFile)}
+	command := []string{fmt.Sprintf(ctx.Act.ExecutionCommand, fmt.Sprint(s.config.PlayerID), appName, fmt.Sprint(ctx.Spdz.PlayerCount), ipFile, resultPathPrefix)}
 	s.logger.Infow("Starting Player-Online.x", GameID, ctx.Act.GameID, "command", command)
 	go func() {
 		stdout, stderr, err := s.cmder.CallCMD(ctx.Context, command, s.baseDir)
@@ -360,6 +362,10 @@ func preparePlayerData(conf *SPDZEngineTypedConfig) (map[castor.SPDZProtocol]str
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gfp Player-params: %v", err)
 	}
+	err = writeGfpParams(playerDataDirs[castor.SPDZGfpD], conf.Prime)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gfp Player-params: %v", err)
+	}
 	return playerDataDirs, nil
 }
 
@@ -373,6 +379,14 @@ func createPlayerDataForProtocol(p castor.SPDZProtocol, conf *SPDZEngineTypedCon
 	case castor.SPDZGf2n:
 		playerDataDir = fmt.Sprintf("%s/%d-%s-%d/",
 			conf.PrepFolder, conf.PlayerCount, castor.SPDZGf2n.Shorthand, conf.Gf2nBitLength)
+		macKey = conf.Gf2nMacKey
+	case castor.SPDZGfpD:
+		playerDataDir = fmt.Sprintf("%s/%d-%s-%d/",
+			conf.PrepFolder, conf.PlayerCount, castor.SPDZGfpD.Shorthand, conf.Prime.BitLen())
+		macKey = conf.GfpMacKey.String()
+	case castor.SPDZGf2nD:
+		playerDataDir = fmt.Sprintf("%s/%d-%s-%d/",
+			conf.PrepFolder, conf.PlayerCount, castor.SPDZGf2nD.Shorthand, conf.Gf2nBitLength)
 		macKey = conf.Gf2nMacKey
 	default:
 		panic("Unsupported SpdzProtocol " + p.Descriptor)
@@ -408,4 +422,23 @@ func writeGfpParams(playerDataDir string, prime big.Int) error {
 	defer file.Close()
 	_, err = file.WriteString(prime.String())
 	return err
+}
+
+func tupleFamilyParser(executionCommand string) (string, castor.SPDZProtocol) {
+	// Takes first command value and maps it to a tuple family / "castor.SPDZProtocol"
+	type SPDZFamily struct {
+		FamilyName string
+		Protocol   castor.SPDZProtocol
+	}
+	mapCmdFamily := map[string]SPDZFamily{
+		"Player-Online.x": SPDZFamily{FamilyName: "CowGear", Protocol: castor.SPDZGfp},
+		"cowgear-party.x": SPDZFamily{FamilyName: "CowGear", Protocol: castor.SPDZGfp},
+		"mascot-party.x":  SPDZFamily{FamilyName: "CowGear", Protocol: castor.SPDZGfp},
+		"hemi-party.x":    SPDZFamily{FamilyName: "Hemi", Protocol: castor.SPDZGfpD},
+		"atlas-party.x":   SPDZFamily{FamilyName: "Atlas", Protocol: castor.SPDZGfp},
+	}
+	preparsedKey := strings.Split(strings.Split(executionCommand, " ")[0], "/")
+	key := preparsedKey[len(preparsedKey)-1]
+
+	return mapCmdFamily[key].FamilyName, mapCmdFamily[key].Protocol
 }

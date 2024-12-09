@@ -10,15 +10,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/carbynestack/ephemeral/pkg/discovery/fsm"
-	. "github.com/carbynestack/ephemeral/pkg/types"
-	. "github.com/carbynestack/ephemeral/pkg/utils"
 	"io/ioutil"
 	"mime"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/carbynestack/ephemeral/pkg/discovery/fsm"
+	. "github.com/carbynestack/ephemeral/pkg/types"
+	. "github.com/carbynestack/ephemeral/pkg/utils"
 
 	"github.com/google/uuid"
 
@@ -93,7 +94,10 @@ func (s *Server) MethodFilter(next http.Handler) http.Handler {
 // Also sets the CtxConfig to the request
 func (s *Server) BodyFilter(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
-		var act Activation
+		act := Activation{
+			CompilationCommand: "./compile.py -M %s",
+			ExecutionCommand:   "./Player-Online.x %s %s -N %s --ip-file-name %s -OF %s --file-prep-per-thread -v",
+		}
 		if req.Body == nil {
 			msg := "request body is nil"
 			writer.WriteHeader(http.StatusBadRequest)
