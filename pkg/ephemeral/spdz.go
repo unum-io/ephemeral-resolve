@@ -358,15 +358,13 @@ func preparePlayerData(conf *SPDZEngineTypedConfig) (map[castor.SPDZProtocol]str
 			return nil, fmt.Errorf("failed to create preprocessing data directories: %v", err)
 		}
 		playerDataDirs[p] = path
+
+		err = writeGfpParams(playerDataDirs[p], conf.Prime)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create %s Player-params: %v", p.Descriptor, err)
+		}
 	}
-	err := writeGfpParams(playerDataDirs[castor.SPDZGfp], conf.Prime)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create gfp Player-params: %v", err)
-	}
-	err = writeGfpParams(playerDataDirs[castor.SPDZGfpD], conf.Prime)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create gfp Player-params: %v", err)
-	}
+
 	return playerDataDirs, nil
 }
 
@@ -444,6 +442,9 @@ func tupleFamilyParser(executionCommand string) (string, castor.SPDZProtocol) {
 		"cowgear-party.x": SPDZFamily{FamilyName: "CowGear", Protocol: castor.SPDZGfp},
 		"mascot-party.x":  SPDZFamily{FamilyName: "CowGear", Protocol: castor.SPDZGfp},
 		"hemi-party.x":    SPDZFamily{FamilyName: "Hemi", Protocol: castor.SPDZGfpD},
+		"temi-party.x":    SPDZFamily{FamilyName: "Hemi", Protocol: castor.SPDZGfpD},
+		"semi-party.x":    SPDZFamily{FamilyName: "Hemi", Protocol: castor.SPDZGfpD},
+		"soho-party.x":    SPDZFamily{FamilyName: "Hemi", Protocol: castor.SPDZGfpD},
 		"atlas-party.x":   SPDZFamily{FamilyName: "Atlas", Protocol: castor.SPDZGfp},
 	}
 	preparsedKey := strings.Split(strings.Split(executionCommand, " ")[0], "/")
