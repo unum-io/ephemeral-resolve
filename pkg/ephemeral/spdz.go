@@ -297,8 +297,8 @@ func (s *SPDZEngine) startMPC(ctx *CtxConfig) {
 	}
 	for _, tt := range castor.SupportedTupleTypes(tupleProtocol) {
 		for thread := 0; thread < nThreads; thread++ {
-			s.logger.Debugw("Creating new tuple streamer", TupleType, tt, "TupleStock", s.config.TupleStock, "Player-Data", s.playerDataPaths[tupleProtocol], GameID, gameUUID, "ThreadNr", thread)
-			streamer, err := s.streamerFactory(s.logger, tt, tupleFamily, s.config, s.playerDataPaths[tupleProtocol], gameUUID, thread)
+			s.logger.Debugw("Creating new tuple streamer", TupleType, tt, "TupleStock", s.config.TupleStock, "Player-Data", s.playerDataPaths[tt.SpdzProtocol], GameID, gameUUID, "ThreadNr", thread)
+			streamer, err := s.streamerFactory(s.logger, tt, tupleFamily, s.config, s.playerDataPaths[tt.SpdzProtocol], gameUUID, thread)
 			if err != nil {
 				s.logger.Errorw("Error when initializing tuple streamer", GameID, ctx.Act.GameID, TupleType, tt, "Error", err)
 				ctx.ErrCh <- err
@@ -388,6 +388,14 @@ func createPlayerDataForProtocol(p castor.SPDZProtocol, conf *SPDZEngineTypedCon
 		playerDataDir = fmt.Sprintf("%s/%d-%s-%d/",
 			conf.PrepFolder, conf.PlayerCount, castor.SPDZGf2nD.Shorthand, conf.Gf2nBitLength)
 		macKey = conf.Gf2nMacKey
+	case castor.SPDZGfpBT:
+		playerDataDir = fmt.Sprintf("%s/%d-%s-%d/",
+			conf.PrepFolder, conf.PlayerCount, castor.SPDZGfpBT.Shorthand, conf.Prime.BitLen()/2)
+		macKey = conf.GfpMacKey.String()
+	case castor.SPDZGfpDBT:
+		playerDataDir = fmt.Sprintf("%s/%d-%s-%d/",
+			conf.PrepFolder, conf.PlayerCount, castor.SPDZGfpDBT.Shorthand, conf.Prime.BitLen()/2)
+		macKey = conf.GfpMacKey.String()
 	default:
 		panic("Unsupported SpdzProtocol " + p.Descriptor)
 	}

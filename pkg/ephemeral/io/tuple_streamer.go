@@ -117,6 +117,10 @@ type TupleStreamer interface {
 
 // GetTupleFileName returns the filename for a given tuple type, spdz configuration and thread number
 func GetTupleFileName(tt castor.TupleType, conf *SPDZEngineTypedConfig, threadNr int) string {
+	if tt.PreprocessingName == "edaBits" {
+		return fmt.Sprintf("%s-%u-P%d-T%d",
+			tt.PreprocessingName, tt.BitLength, conf.PlayerID, threadNr)
+	}
 	return fmt.Sprintf("%s-%s-P%d-T%d",
 		tt.PreprocessingName, tt.SpdzProtocol.Shorthand, conf.PlayerID, threadNr)
 }
@@ -358,39 +362,30 @@ func generateHeader(sp castor.SPDZProtocol, conf *SPDZEngineTypedConfig) ([]byte
 		return generateGfpHeaderProto(sp, conf.Prime), nil
 	case castor.SPDZGf2n, castor.SPDZGf2nD:
 		return generateGf2nHeaderProto(sp, conf.Gf2nBitLength, conf.Gf2nStorageSize), nil
-		/*
-			case castor.SPDZGfpD:
-				return generateGfpHeaderD(conf.Prime), nil
-			case castor.SPDZGf2nD:
-				return generateGf2nHeader(conf.Gf2nBitLength, conf.Gf2nStorageSize), nil
-		*/
+	case castor.SPDZGfpBT, castor.SPDZGfpDBT:
+		return generateGfpBTHeaderProto(sp, conf.Prime), nil
 	}
 	return nil, errors.New("unsupported spdz protocol " + sp.Descriptor)
 }
 
-/*
-func generateGfpHeader(prime big.Int) []byte {
-	descriptor := []byte(castor.SPDZGfp.Descriptor)
-	primeBytes := prime.Bytes()
-	primeByteLength := len(primeBytes)
-	totalSizeInBytes := uint64(len(descriptor) + 1 + 4 + primeByteLength)
+// TO DO: Look further into MP-SPDZ file signature / specification
+func generateGfpBTHeaderProto(sp castor.SPDZProtocol, prime big.Int) []byte {
+	descriptor := []byte(sp.Descriptor)
+	totalSizeInBytes := uint64(21) // AVH: Truly a magical number, I don't know why 21 here
 
 	var result []byte
 
 	bytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(bytes, totalSizeInBytes)
-	result = append(result, bytes...)      // Total length to follow (e.g. 29 bytes)
-	result = append(result, descriptor...) // "SPDZ gfp"
-	result = append(result, byte(0))       // Signum (0 == positive)
+	result = append(result, bytes...) // Total length to follow (e.g. 29 bytes)
+	result = append(result, descriptor...)
+	result = append(result, byte(8)) // AVH: Truly a magical number, I don't know why 8 here
 
-	bytes = make([]byte, 4)
-	binary.LittleEndian.PutUint32(bytes, uint32(primeByteLength))
-	result = append(result, bytes...)      // Prime length to follow (e.g. 16 byte == 128 bit)
-	result = append(result, primeBytes...) // The prime itself
+	bytes = make([]byte, 7)
+	result = append(result, bytes...)
 
 	return result
 }
-*/
 
 func generateGfpHeaderProto(sp castor.SPDZProtocol, prime big.Int) []byte {
 	descriptor := []byte(sp.Descriptor)
@@ -413,31 +408,6 @@ func generateGfpHeaderProto(sp castor.SPDZProtocol, prime big.Int) []byte {
 
 	return result
 }
-
-/*
-func generateGf2nHeader(bitLength int32, storageSize int32) []byte {
-	protocol := []byte(castor.SPDZGf2n.Descriptor) // e.g. "SPDZ gf2n"
-
-	var domain []byte
-	storageSizeData := make([]byte, 8)
-	binary.LittleEndian.PutUint32(storageSizeData, uint32(storageSize))
-	nValue := make([]byte, 4)
-	binary.LittleEndian.PutUint32(nValue, uint32(bitLength))
-	domain = append(domain, storageSizeData...) // e.g. 8
-	domain = append(domain, nValue...)          // e.g. 40
-
-	totalSizeInBytes := uint64(len(protocol) + len(domain))
-	size := make([]byte, 8)
-	binary.LittleEndian.PutUint64(size, totalSizeInBytes)
-
-	var result []byte
-	result = append(result, size...)     // Total length to follow (e.g. 29 bytes)
-	result = append(result, protocol...) // e.g. "SPDZ gf2n"
-	result = append(result, domain...)   // e.g. 40
-
-	return result
-}
-*/
 
 func generateGf2nHeaderProto(sp castor.SPDZProtocol, bitLength int32, storageSize int32) []byte {
 	protocol := []byte(sp.Descriptor) // e.g. "SPDZ gf2n"
