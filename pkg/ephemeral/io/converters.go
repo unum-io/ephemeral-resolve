@@ -24,7 +24,8 @@ type SecretSharesConverter struct {
 
 // Convert encodes a byte array in base64.
 func (b *SecretSharesConverter) convert(in []byte) ([]Parcel, error) {
-	shareSize := WordSize * 2 // it is 32 bytes, value + MAC
+	//shareSize := WordSize * 2 // it is 32 bytes, value + MAC
+	shareSize := b.Params[0].(int)
 	rem := math.Remainder(float64(len(in)), float64(shareSize))
 	if rem > 0 {
 		return nil, fmt.Errorf("received secret shared value length is not a multiple of %d", shareSize)

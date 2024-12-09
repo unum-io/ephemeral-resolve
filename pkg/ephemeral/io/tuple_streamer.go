@@ -12,9 +12,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/carbynestack/ephemeral/pkg/utils"
-	"github.com/google/uuid"
-	"go.uber.org/zap"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -22,6 +19,10 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/carbynestack/ephemeral/pkg/utils"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/carbynestack/ephemeral/pkg/castor"
 	. "github.com/carbynestack/ephemeral/pkg/types"
@@ -116,18 +117,22 @@ type TupleStreamer interface {
 
 // GetTupleFileName returns the filename for a given tuple type, spdz configuration and thread number
 func GetTupleFileName(tt castor.TupleType, conf *SPDZEngineTypedConfig, threadNr int) string {
+	if tt.PreprocessingName == "edaBits" {
+		return fmt.Sprintf("%s-%u-P%d-T%d",
+			tt.PreprocessingName, tt.BitLength, conf.PlayerID, threadNr)
+	}
 	return fmt.Sprintf("%s-%s-P%d-T%d",
 		tt.PreprocessingName, tt.SpdzProtocol.Shorthand, conf.PlayerID, threadNr)
 }
 
 // NewCastorTupleStreamer returns a new instance of castor tuple streamer.
-func NewCastorTupleStreamer(l *zap.SugaredLogger, tt castor.TupleType, conf *SPDZEngineTypedConfig, playerDataDir string, gameID uuid.UUID, threadNr int) (*CastorTupleStreamer, error) {
-	ts, err := NewCastorTupleStreamerWithWriterFactory(l, tt, conf, playerDataDir, gameID, threadNr, DefaultPipeWriterFactory)
+func NewCastorTupleStreamer(l *zap.SugaredLogger, tt castor.TupleType, tf string, conf *SPDZEngineTypedConfig, playerDataDir string, gameID uuid.UUID, threadNr int) (*CastorTupleStreamer, error) {
+	ts, err := NewCastorTupleStreamerWithWriterFactory(l, tt, tf, conf, playerDataDir, gameID, threadNr, DefaultPipeWriterFactory)
 	return ts, err
 }
 
 // NewCastorTupleStreamerWithWriterFactory returns a new instance of castor tuple streamer.
-func NewCastorTupleStreamerWithWriterFactory(l *zap.SugaredLogger, tt castor.TupleType, conf *SPDZEngineTypedConfig, playerDataDir string, gameID uuid.UUID, threadNr int, pipeWriterFactory PipeWriterFactory) (*CastorTupleStreamer, error) {
+func NewCastorTupleStreamerWithWriterFactory(l *zap.SugaredLogger, tt castor.TupleType, tf string, conf *SPDZEngineTypedConfig, playerDataDir string, gameID uuid.UUID, threadNr int, pipeWriterFactory PipeWriterFactory) (*CastorTupleStreamer, error) {
 	loggerWithContext := l.With(GameID, gameID, TupleType, tt, "ThreadNr", threadNr)
 	tupleFileName := GetTupleFileName(tt, conf, threadNr)
 	filePath := filepath.Join(playerDataDir, tupleFileName)
@@ -144,6 +149,7 @@ func NewCastorTupleStreamerWithWriterFactory(l *zap.SugaredLogger, tt castor.Tup
 		logger:        loggerWithContext,
 		pipeWriter:    pipeWriter,
 		tupleType:     tt,
+		tupleFamily:   tf,
 		stockSize:     conf.TupleStock,
 		castorClient:  conf.CastorClient,
 		baseRequestID: uuid.NewMD5(gameID, []byte(tt.Name+strconv.Itoa(threadNr))),
@@ -156,6 +162,7 @@ type CastorTupleStreamer struct {
 	logger         *zap.SugaredLogger
 	pipeWriter     PipeWriter
 	tupleType      castor.TupleType
+	tupleFamily    string
 	stockSize      int32
 	castorClient   castor.AbstractClient
 	baseRequestID  uuid.UUID
@@ -273,7 +280,7 @@ func (ts *CastorTupleStreamer) bufferData(terminateCh chan struct{}, streamerErr
 func (ts *CastorTupleStreamer) getTupleData() ([]byte, error) {
 	requestID := uuid.NewMD5(ts.baseRequestID, []byte(strconv.Itoa(ts.requestCycle)))
 	ts.requestCycle++
-	tupleList, err := ts.castorClient.GetTuples(ts.stockSize, ts.tupleType, requestID)
+	tupleList, err := ts.castorClient.GetTuples(ts.stockSize, ts.tupleType, ts.tupleFamily, requestID)
 	if err != nil {
 		return nil, err
 	}
@@ -351,16 +358,37 @@ func (ts *CastorTupleStreamer) tupleListToByteArray(tl *castor.TupleList) ([]byt
 // generateHeader returns the file header for the given protocol and spdz runtime configuration
 func generateHeader(sp castor.SPDZProtocol, conf *SPDZEngineTypedConfig) ([]byte, error) {
 	switch sp {
-	case castor.SPDZGfp:
-		return generateGfpHeader(conf.Prime), nil
-	case castor.SPDZGf2n:
-		return generateGf2nHeader(conf.Gf2nBitLength, conf.Gf2nStorageSize), nil
+	case castor.SPDZGfp, castor.SPDZGfpD:
+		return generateGfpHeaderProto(sp, conf.Prime), nil
+	case castor.SPDZGf2n, castor.SPDZGf2nD:
+		return generateGf2nHeaderProto(sp, conf.Gf2nBitLength, conf.Gf2nStorageSize), nil
+	case castor.SPDZGfpBT, castor.SPDZGfpDBT:
+		return generateGfpBTHeaderProto(sp, conf.Prime), nil
 	}
 	return nil, errors.New("unsupported spdz protocol " + sp.Descriptor)
 }
 
-func generateGfpHeader(prime big.Int) []byte {
-	descriptor := []byte(castor.SPDZGfp.Descriptor)
+// TO DO: Look further into MP-SPDZ file signature / specification
+func generateGfpBTHeaderProto(sp castor.SPDZProtocol, prime big.Int) []byte {
+	descriptor := []byte(sp.Descriptor)
+	totalSizeInBytes := uint64(21) // AVH: Truly a magical number, I don't know why 21 here
+
+	var result []byte
+
+	bytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(bytes, totalSizeInBytes)
+	result = append(result, bytes...) // Total length to follow (e.g. 29 bytes)
+	result = append(result, descriptor...)
+	result = append(result, byte(8)) // AVH: Truly a magical number, I don't know why 8 here
+
+	bytes = make([]byte, 7)
+	result = append(result, bytes...)
+
+	return result
+}
+
+func generateGfpHeaderProto(sp castor.SPDZProtocol, prime big.Int) []byte {
+	descriptor := []byte(sp.Descriptor)
 	primeBytes := prime.Bytes()
 	primeByteLength := len(primeBytes)
 	totalSizeInBytes := uint64(len(descriptor) + 1 + 4 + primeByteLength)
@@ -381,8 +409,8 @@ func generateGfpHeader(prime big.Int) []byte {
 	return result
 }
 
-func generateGf2nHeader(bitLength int32, storageSize int32) []byte {
-	protocol := []byte(castor.SPDZGf2n.Descriptor) // e.g. "SPDZ gf2n"
+func generateGf2nHeaderProto(sp castor.SPDZProtocol, bitLength int32, storageSize int32) []byte {
+	protocol := []byte(sp.Descriptor) // e.g. "SPDZ gf2n"
 
 	var domain []byte
 	storageSizeData := make([]byte, 8)

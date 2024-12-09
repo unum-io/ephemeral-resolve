@@ -53,7 +53,7 @@ var MaxLength = int(math.Pow(2, 32))
 
 // Packer is an interface to marshal and unmarshal strings to the format specified by a given MPC runtime.
 type Packer interface {
-	Marshal([]string, *[]byte) error
+	Marshal([]string, *[]byte, int) error
 	Unmarshal(*[]byte, ResponseConverter, bool) ([]string, error)
 }
 
@@ -64,11 +64,11 @@ type SPDZPacker struct {
 }
 
 // Marshal converts a base64 encoded string into a byte array consumable by SPDZ runtime.
-func (p *SPDZPacker) Marshal(b64 []string, dst *[]byte) (err error) {
+func (p *SPDZPacker) Marshal(b64 []string, dst *[]byte, bodySize int) (err error) {
 	if len(b64) < 1 {
 		return errors.New(ErrMarshal)
 	}
-	parcels, err := p.base64ToParcels(b64)
+	parcels, err := p.base64ToParcels(b64, bodySize)
 	if err != nil {
 		return err
 	}
@@ -102,17 +102,17 @@ func (p *SPDZPacker) Unmarshal(in *[]byte, conv ResponseConverter, bulkSecrets b
 
 // base64ToParcels parses a base64 encoded byte array and returns a slice of parcels.
 // The byte array is a list of concatenated 32 bytes strings.
-func (p *SPDZPacker) base64ToParcels(b64 []string) (prc []Parcel, err error) {
+func (p *SPDZPacker) base64ToParcels(b64 []string, bodySize int) (prc []Parcel, err error) {
 	for i := range b64 {
 		body, err := base64.StdEncoding.DecodeString(b64[i])
 		if err != nil {
 			return nil, err
 		}
-		if len(body)%BodySize != 0 {
+		if len(body)%bodySize != 0 {
 			return nil, errors.New(ErrInvalidBodySize)
 		}
-		for i := 0; i < len(body)-(BodySize-1); i += BodySize {
-			j := i + BodySize
+		for i := 0; i < len(body)-(bodySize-1); i += bodySize {
+			j := i + bodySize
 			chunk := body[i:j]
 			size, err := lenToBytes(chunk)
 			if err != nil {

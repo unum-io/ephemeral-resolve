@@ -12,18 +12,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
+
+	"github.com/google/uuid"
 
 	"github.com/asaskevich/govalidator"
 )
 
 // AbstractClient is an interface for castor tuple client.
 type AbstractClient interface {
-	GetTuples(tupleCount int32, tupleType TupleType, requestID uuid.UUID) (*TupleList, error)
+	GetTuples(tupleCount int32, tupleType TupleType, tupleFamily string, requestID uuid.UUID) (*TupleList, error)
 }
 
 // NewClient returns a new Castor client for the given endpoint
@@ -44,13 +45,15 @@ type Client struct {
 
 const tupleURI = "/intra-vcp/tuples"
 const tupleTypeParam = "tupletype"
+const tupleFamilyParam = "tuplefamily"
 const countParam = "count"
 const reservationIDParam = "reservationId"
 
 // GetTuples retrieves a list of tuples matching the given criteria from Castor
-func (c *Client) GetTuples(count int32, tt TupleType, requestID uuid.UUID) (*TupleList, error) {
+func (c *Client) GetTuples(count int32, tt TupleType, tf string, requestID uuid.UUID) (*TupleList, error) {
 	values := url.Values{}
 	values.Add(tupleTypeParam, tt.Name)
+	values.Add(tupleFamilyParam, tf)
 	values.Add(countParam, strconv.Itoa(int(count)))
 	values.Add(reservationIDParam, requestID.String())
 	requestURL, err := c.URL.Parse(tupleURI)

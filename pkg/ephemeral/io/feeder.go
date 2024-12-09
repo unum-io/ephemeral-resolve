@@ -7,18 +7,19 @@ package io
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/carbynestack/ephemeral/pkg/amphora"
 	"github.com/carbynestack/ephemeral/pkg/ephemeral/network"
 	. "github.com/carbynestack/ephemeral/pkg/types"
-	"strings"
 
 	"go.uber.org/zap"
 )
 
 // Feeder is an interface.
 type Feeder interface {
-	LoadFromSecretStoreAndFeed(act *Activation, feedPort string, ctx *CtxConfig) ([]byte, error)
-	LoadFromRequestAndFeed(act *Activation, feedPort string, ctx *CtxConfig) ([]byte, error)
+	LoadFromSecretStoreAndFeed(act *Activation, feedPort string, familyName string, ctx *CtxConfig) ([]byte, error)
+	LoadFromRequestAndFeed(act *Activation, feedPort string, familyName string, ctx *CtxConfig) ([]byte, error)
 	Close() error
 }
 
@@ -48,7 +49,7 @@ type AmphoraFeeder struct {
 }
 
 // LoadFromSecretStoreAndFeed loads input parameters from Amphora.
-func (f *AmphoraFeeder) LoadFromSecretStoreAndFeed(act *Activation, feedPort string, ctx *CtxConfig) ([]byte, error) {
+func (f *AmphoraFeeder) LoadFromSecretStoreAndFeed(act *Activation, feedPort string, familyName string, ctx *CtxConfig) ([]byte, error) {
 	var data []string
 	client := f.conf.AmphoraClient
 	for i := range act.AmphoraParams {
@@ -58,13 +59,13 @@ func (f *AmphoraFeeder) LoadFromSecretStoreAndFeed(act *Activation, feedPort str
 		}
 		data = append(data, osh.Data)
 	}
-	resp, err := f.feedAndRead(data, feedPort, ctx)
+	resp, err := f.feedAndRead(data, feedPort, familyName, ctx)
 	if err != nil {
 		return nil, err
 	}
 	// Write to amphora if required and return amphora secret ids.
 	if act.Output.Type == AmphoraSecret {
-		ids, err := f.writeToAmphora(act, *resp)
+		ids, err := f.writeToAmphora(act, *resp, familyName)
 		if err != nil {
 			return nil, err
 		}
@@ -74,14 +75,14 @@ func (f *AmphoraFeeder) LoadFromSecretStoreAndFeed(act *Activation, feedPort str
 }
 
 // LoadFromRequestAndFeed loads input parameteters from the request body.
-func (f *AmphoraFeeder) LoadFromRequestAndFeed(act *Activation, feedPort string, ctx *CtxConfig) ([]byte, error) {
-	resp, err := f.feedAndRead(act.SecretParams, feedPort, ctx)
+func (f *AmphoraFeeder) LoadFromRequestAndFeed(act *Activation, feedPort string, familyName string, ctx *CtxConfig) ([]byte, error) {
+	resp, err := f.feedAndRead(act.SecretParams, feedPort, familyName, ctx)
 	if err != nil {
 		return nil, err
 	}
 	// Write to amphora if required and return amphora secret ids.
 	if act.Output.Type == AmphoraSecret {
-		ids, err := f.writeToAmphora(act, *resp)
+		ids, err := f.writeToAmphora(act, *resp, familyName)
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +98,7 @@ func (f *AmphoraFeeder) Close() error {
 }
 
 // feedAndRead takes a slice of base64 encoded secret shared parameters along with the port where SPDZ runtime is listening for the input. The base64 input params are converted into a form digestable by SPDZ and sent to the socket. The runtime must send back a response for this function to finish without an error.
-func (f *AmphoraFeeder) feedAndRead(params []string, feedPort string, ctx *CtxConfig) (*Result, error) {
+func (f *AmphoraFeeder) feedAndRead(params []string, feedPort string, familyName string, ctx *CtxConfig) (*Result, error) {
 	var conv ResponseConverter
 	f.logger.Debugw(fmt.Sprintf("Received secret shared parameters \"%.10s...\" (len: %d)", params, len(params)), GameID, ctx.Act.GameID)
 	isBulk := false
@@ -109,9 +110,15 @@ func (f *AmphoraFeeder) feedAndRead(params []string, feedPort string, ctx *CtxCo
 			Params: mpcParams,
 		}
 	case SecretShare:
-		conv = &SecretSharesConverter{}
+		shareSizeParam := []interface{}{getShareSize(familyName)}
+		conv = &SecretSharesConverter{
+			Params: shareSizeParam,
+		}
 	case AmphoraSecret:
-		conv = &SecretSharesConverter{}
+		shareSizeParam := []interface{}{getShareSize(familyName)}
+		conv = &SecretSharesConverter{
+			Params: shareSizeParam,
+		}
 		isBulk = true
 	default:
 		return nil, fmt.Errorf("no output config is given, either %s, %s or %s must be defined", PlainText, SecretShare, AmphoraSecret)
@@ -129,7 +136,7 @@ func (f *AmphoraFeeder) feedAndRead(params []string, feedPort string, ctx *CtxCo
 		}
 		secrets = append(secrets, secret)
 	}
-	err = f.carrier.Send(secrets)
+	err = f.carrier.Send(secrets, getShareSize((familyName)))
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +144,19 @@ func (f *AmphoraFeeder) feedAndRead(params []string, feedPort string, ctx *CtxCo
 	return f.carrier.Read(conv, isBulk)
 }
 
-func (f *AmphoraFeeder) writeToAmphora(act *Activation, resp Result) ([]string, error) {
+func getShareSize(familyName string) int {
+	var shareSize = 32
+	switch familyName {
+	case "Hemi":
+		shareSize = 16
+	case "CowGear":
+		shareSize = 32
+	}
+
+	return shareSize
+}
+
+func (f *AmphoraFeeder) writeToAmphora(act *Activation, resp Result, familyName string) ([]string, error) {
 	client := f.conf.AmphoraClient
 	os := amphora.SecretShare{
 		SecretID: act.GameID,
@@ -148,6 +167,11 @@ func (f *AmphoraFeeder) writeToAmphora(act *Activation, resp Result) ([]string, 
 				ValueType: "STRING",
 				Key:       "gameID",
 				Value:     act.GameID,
+			},
+			amphora.Tag{
+				ValueType: "STRING",
+				Key:       "ShareFamily",
+				Value:     familyName,
 			},
 		},
 	}

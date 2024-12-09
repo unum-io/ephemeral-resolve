@@ -69,8 +69,8 @@ public class EphemeralMultiClient {
    *     occurs on the network or representation layer
    */
   public Future<Either<ActivationError, List<ActivationResult>>> execute(
-      @NonNull String code, @NonNull List<UUID> inputSecretIds) {
-    return execute(code, UUID.randomUUID(), inputSecretIds);
+      @NonNull String code, String compilationCommand, String executionCommand, @NonNull List<UUID> inputSecretIds) {
+    return execute(code, UUID.randomUUID(), compilationCommand, executionCommand, inputSecretIds);
   }
 
   /**
@@ -87,7 +87,7 @@ public class EphemeralMultiClient {
    *     occurs on the network or representation layer
    */
   public Future<Either<ActivationError, List<ActivationResult>>> execute(
-      @NonNull String code, @NonNull UUID gameId, @NonNull List<UUID> inputSecretIds) {
+      @NonNull String code, @NonNull UUID gameId, String compilationCommand, String executionCommand, @NonNull List<UUID> inputSecretIds) {
     if (log.isDebugEnabled()) {
       log.debug(
           "Invoking ephemeral services at {} and game {}",
@@ -107,6 +107,12 @@ public class EphemeralMultiClient {
                                   .map(UUID::toString)
                                   .toJavaArray(String[]::new))
                           .code(code);
+                  if(compilationCommand != null && !compilationCommand.trim().isEmpty()) {
+                    activationBuilder.compilationCommand(compilationCommand);
+                  }
+                  if(executionCommand != null && !executionCommand.trim().isEmpty()) {
+                    activationBuilder.executionCommand(executionCommand);
+                  }
                   Activation activation = activationBuilder.build();
                   if (log.isDebugEnabled()) {
                     log.debug(
