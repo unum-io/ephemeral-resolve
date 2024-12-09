@@ -202,11 +202,12 @@ func (s *SPDZEngine) Activate(ctx *CtxConfig) ([]byte, error) {
 	var activationErr error = nil
 	go func() {
 		defer close(doneCh)
+		familyName, _ := tupleFamilyParser(ctx.Act.ExecutionCommand)
 		// Read the secret shares either from Amphora or from the http request.
 		if len(act.AmphoraParams) > 0 {
-			activationResult, activationErr = s.feeder.LoadFromSecretStoreAndFeed(act, feedPort, ctx)
+			activationResult, activationErr = s.feeder.LoadFromSecretStoreAndFeed(act, feedPort, familyName, ctx)
 		} else if len(act.SecretParams) > 0 {
-			activationResult, activationErr = s.feeder.LoadFromRequestAndFeed(act, feedPort, ctx)
+			activationResult, activationErr = s.feeder.LoadFromRequestAndFeed(act, feedPort, familyName, ctx)
 		} else {
 			activationErr = errors.New("no MPC parameters specified")
 		}

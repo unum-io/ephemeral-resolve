@@ -34,7 +34,7 @@ type ConnectionInfo struct {
 type AbstractCarrier interface {
 	Connect(context.Context, int32, string, string) error
 	Close() error
-	Send([]amphora.SecretShare) error
+	Send([]amphora.SecretShare, int) error
 	Read(ResponseConverter, bool) (*Result, error)
 }
 
@@ -120,13 +120,13 @@ func (c *Carrier) Close() error {
 }
 
 // Send transmits Amphora secret shares to a TCP socket opened by an MPC runtime.
-func (c *Carrier) Send(secret []amphora.SecretShare) error {
+func (c *Carrier) Send(secret []amphora.SecretShare, shareSize int) error {
 	input := []byte{}
 	shares := []string{}
 	for i := range secret {
 		shares = append(shares, secret[i].Data)
 	}
-	err := c.Packer.Marshal(shares, &input)
+	err := c.Packer.Marshal(shares, &input, shareSize)
 	if err != nil {
 		return err
 	}
